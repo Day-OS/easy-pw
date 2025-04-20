@@ -1,0 +1,11 @@
+[package]
+name = "easy-pw"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures = "0.3.31"
+libspa = "0.8.0"
+log = "0.4.27"
+pipewire = "0.8.0"
+thiserror = "2.0.12"
