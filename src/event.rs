@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     rc::Rc,
     sync::{Arc, Mutex},
 };
@@ -21,14 +22,21 @@ pub enum PipeWireEvent {
     UnlinkCommand(u32, u32),
 }
 
-impl ToString for PipeWireEvent {
-    fn to_string(&self) -> String {
+impl Display for PipeWireEvent {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
         match self {
             PipeWireEvent::LinkCommand(source_id, target_id) => {
-                format!("LinkCommand({}, {})", source_id, target_id)
+                write!(f, "LinkCommand({}, {})", source_id, target_id)
             }
             PipeWireEvent::UnlinkCommand(source_id, target_id) => {
-                format!("UnlinkCommand({}, {})", source_id, target_id)
+                write!(
+                    f,
+                    "UnlinkCommand({}, {})",
+                    source_id, target_id
+                )
             }
         }
     }
@@ -118,7 +126,7 @@ impl PipeWireEvent {
                     && link.input_node == target_id
             });
 
-        if let None = link {
+        if link.is_none() {
             log::error!(
                 "Link not found for source ID: {} and target ID: {}",
                 source_id,

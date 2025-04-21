@@ -244,7 +244,7 @@ impl PipeWireManager {
     ) {
         let mut event_result: ConnectorEvent = ConnectorEvent::None;
         // Lock the thread and wait for the event to be processed
-        while checker(&event_result) == false {
+        while !checker(&event_result) {
             let result = self._receiver.try_recv();
 
             if let Err(e) = result {
@@ -256,5 +256,9 @@ impl PipeWireManager {
             event_result = result.unwrap();
         }
         log::debug!("(Connector) Received event: {:?}", event_result)
+    }
+
+    pub fn get_objects(&self) -> Arc<Mutex<PipeWireObjects>> {
+        self.objects.clone()
     }
 }

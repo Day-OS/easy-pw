@@ -10,8 +10,8 @@ use super::port::Port;
 use futures::executor;
 #[derive(Default)]
 pub struct PipeWireObjects {
-    pub(crate) nodes: Vec<Node>,
-    pub(crate) links: Vec<Link>,
+    pub nodes: Vec<Node>,
+    pub links: Vec<Link>,
     pub(super) _ports_to_be_added: Vec<Port>,
 }
 
@@ -167,7 +167,7 @@ impl PipeWireObjects {
             self.find_two_nodes_by_id_mut(input_node, output_node);
 
         // In case this fails, it means that one of the nodes were deleted earlier.
-        if !first_node.is_none() && !second_node.is_none() {
+        if first_node.is_some() && second_node.is_some() {
             let first_node = first_node.unwrap();
             let second_node = second_node.unwrap();
             log::debug!(
@@ -178,9 +178,8 @@ impl PipeWireObjects {
             let link = self.find_links_by_id_mut(id);
             let link = link.unwrap();
             if registry.is_some() {
-                executor::block_on(
-                    link.remove_link(registry.unwrap()),
-                );
+                let registry = registry.unwrap();
+                executor::block_on(link.remove_link(registry));
             }
         }
 

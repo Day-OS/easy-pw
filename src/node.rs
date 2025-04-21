@@ -40,7 +40,7 @@ pub struct Node {
     pub media_role: Option<String>,
     pub client_api: Option<String>,
     pub application_name: Option<String>,
-    pub(crate) ports: Vec<Port>,
+    pub ports: Vec<Port>,
 }
 
 impl Node {

@@ -1,18 +1,14 @@
 mod event;
 mod link;
-mod manager;
+pub mod manager;
 mod node;
 pub mod objects;
-mod port;
+pub mod port;
 mod utils;
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
-
     use crate::manager::PipeWireManager;
-
-    use super::*;
 
     #[test]
     fn creation_of_manager() {
