@@ -157,7 +157,7 @@ impl PipeWireEvent {
         let link_id = link.unwrap().id;
         log::info!("Found link with ID: {} while searching for source ID: {} and target ID: {}", link_id, source_id, target_id);
 
-        objects.remove_link(link_id, Some(registry));
+        objects.remove_link(link_id, Some(registry))?;
         Ok(())
     }
 }

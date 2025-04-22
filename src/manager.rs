@@ -199,7 +199,7 @@ impl PipeWireManager {
         }
 
         if let Some(id) = link_id {
-            objects.remove_link(id, None);
+            let _ = objects.remove_link(id, None);
         }
         if let Some(id) = node_id {
             objects.remove_node(id);
