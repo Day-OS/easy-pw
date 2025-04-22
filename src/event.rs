@@ -141,23 +141,20 @@ impl PipeWireEvent {
         }
         let mut objects = objects.unwrap();
 
-        let link: Option<&mut Link> =
-            objects.links.iter_mut().find(|link| {
-                link.output_node == source_id
-                    && link.input_node == target_id
-            });
+        let mut links_id = vec![];
 
-        if link.is_none() {
-            return Err(format!(
-                "Link not found for source ID: {} and target ID: {}",
-                source_id, target_id
-            ));
+        for link in objects.links.iter() {
+            if link.output_node == source_id
+                && link.input_node == target_id
+            {
+                links_id.push(link.id);
+            }
         }
 
-        let link_id = link.unwrap().id;
-        log::info!("Found link with ID: {} while searching for source ID: {} and target ID: {}", link_id, source_id, target_id);
-
-        objects.remove_link(link_id, Some(registry))?;
+        for id in links_id {
+            log::debug!("Found link with ID: {} while searching for source ID: {} and target ID: {}", id, source_id, target_id);
+            objects.remove_link(id, Some(registry.clone()))?;
+        }
         Ok(())
     }
 }
