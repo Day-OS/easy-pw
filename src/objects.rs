@@ -151,11 +151,13 @@ impl PipeWireObjects {
         &mut self,
         id: u32,
         registry: Option<Rc<Mutex<Registry>>>,
-    ) {
+    ) -> Result<(), String> {
         let link = self.find_links_by_id_mut(id);
         if link.is_none() {
-            log::error!("Failed to find link with id {}", id);
-            return;
+            return Err(format!(
+                "Failed to find link with id {}",
+                id
+            ));
         }
 
         // Log what node is being removed from what node;
@@ -186,5 +188,6 @@ impl PipeWireObjects {
         let index =
             self.links.iter().position(|link| link.id == id).unwrap();
         self.links.remove(index);
+        Ok(())
     }
 }

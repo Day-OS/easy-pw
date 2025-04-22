@@ -13,6 +13,8 @@ use super::{link::Link, objects::PipeWireObjects};
 pub enum ConnectorEvent {
     None,
     LinkUpdate(u32, u32),
+    LinkFailed(u32, u32),
+    UnLinkFailed(u32, u32),
 }
 
 /// Events that is received by the PipeWire Backend thread.
@@ -44,20 +46,27 @@ impl Display for PipeWireEvent {
 
 impl PipeWireEvent {
     #[allow(unreachable_patterns)]
+    /// Handle the event and return a ConnectorEvent response if needed.
     pub fn handle(
         &self,
         _event_locker: Arc<Mutex<()>>,
         objects: Arc<Mutex<PipeWireObjects>>,
         core: Rc<Mutex<Core>>,
         registry: Rc<Mutex<Registry>>,
-    ) {
+    ) -> Result<(), ConnectorEvent> {
         let event_locker = _event_locker.lock().unwrap();
         log::debug!("(Pipewire) Handling Event: {:#?}", self);
         match self {
             PipeWireEvent::LinkCommand(source_id, target_id) => {
-                let _ = &PipeWireEvent::_link_command(
+                let result = &PipeWireEvent::_link_command(
                     objects, core, *source_id, *target_id,
                 );
+                if let Err(e) = result {
+                    log::error!("Failed to link nodes: {}", e);
+                    return Err(ConnectorEvent::LinkFailed(
+                        *source_id, *target_id,
+                    ));
+                }
             }
             PipeWireEvent::UnlinkCommand(source_id, target_id) => {
                 log::info!(
@@ -65,15 +74,22 @@ impl PipeWireEvent {
                     source_id,
                     target_id
                 );
-                let _ = &PipeWireEvent::_unlink_command(
+                let result = &PipeWireEvent::_unlink_command(
                     objects, registry, *source_id, *target_id,
                 );
+                if let Err(e) = result {
+                    log::error!("Failed to link nodes: {}", e);
+                    return Err(ConnectorEvent::UnLinkFailed(
+                        *source_id, *target_id,
+                    ));
+                }
             }
             _ => {
                 log::warn!("Unhandled event: {:?}", self);
             }
         }
         drop(event_locker);
+        Ok(())
     }
 
     fn _link_command(
@@ -81,42 +97,47 @@ impl PipeWireEvent {
         core: Rc<Mutex<Core>>,
         source_id: u32,
         target_id: u32,
-    ) {
+    ) -> Result<(), String> {
         let objects = objects.lock();
+
         if let Err(e) = objects {
-            log::error!("Failed to lock objects: {}", e);
-            return;
+            return Err(format!("Failed to lock objects: {}", e));
         }
         let mut objects = objects.unwrap();
+
+        if source_id == target_id {
+            return Err(format!(
+                "Source and target IDs are the same: {}",
+                source_id
+            ));
+        }
 
         let (input_node, target_node) =
             objects.find_two_nodes_by_id_mut(source_id, target_id);
 
         if input_node.is_none() || target_node.is_none() {
-            log::error!(
+            return Err(format!(
                 "One or both nodes not found for IDs: {} and {}",
-                source_id,
-                target_id
-            );
-            return;
+                source_id, target_id
+            ));
         }
 
         let input_node = input_node.unwrap();
         let target_node = target_node.unwrap();
         if let Err(e) = input_node.link_device(core, target_node) {
-            log::error!("Failed to link devices: {}", e);
+            return Err(format!("Failed to link devices: {}", e));
         }
+        Ok(())
     }
     fn _unlink_command(
         objects: Arc<Mutex<PipeWireObjects>>,
         registry: Rc<Mutex<Registry>>,
         source_id: u32,
         target_id: u32,
-    ) {
+    ) -> Result<(), String> {
         let objects = objects.lock();
         if let Err(e) = objects {
-            log::error!("Failed to lock objects: {}", e);
-            return;
+            return Err(format!("Failed to lock objects: {}", e));
         }
         let mut objects = objects.unwrap();
 
@@ -127,17 +148,16 @@ impl PipeWireEvent {
             });
 
         if link.is_none() {
-            log::error!(
+            return Err(format!(
                 "Link not found for source ID: {} and target ID: {}",
-                source_id,
-                target_id
-            );
-            return;
+                source_id, target_id
+            ));
         }
 
         let link_id = link.unwrap().id;
         log::info!("Found link with ID: {} while searching for source ID: {} and target ID: {}", link_id, source_id, target_id);
 
         objects.remove_link(link_id, Some(registry));
+        Ok(())
     }
 }

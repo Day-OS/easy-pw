@@ -74,6 +74,8 @@ impl PipeWireManager {
             let nodes_clone_remove = nodes.clone();
             let nodes_clone_event = nodes.clone();
 
+            let _sender_arcmtx = Arc::new(Mutex::new(_sender));
+
             let core_mutex: Rc<Mutex<Core>> =
                 Rc::new(Mutex::new(core));
 
@@ -82,6 +84,7 @@ impl PipeWireManager {
 
             let registry_lock = registry_mutex.lock().unwrap();
 
+            let event_handler_sender = _sender_arcmtx.clone();
             // Add registry listener
             let _listener = registry_lock
                 .add_listener_local()
@@ -89,7 +92,7 @@ impl PipeWireManager {
                     Self::_pw_event_handler(
                         global,
                         &nodes_clone.clone(),
-                        &_sender,
+                        event_handler_sender.clone(),
                     )
                 })
                 .global_remove(move |object_id| {
@@ -104,14 +107,18 @@ impl PipeWireManager {
 
             let _receiver =
                 _receiver.attach(mainloop.loop_(), move |event| {
+                    let _sender_mtx = _sender_arcmtx.lock().unwrap();
                     let objects = nodes_clone_event.clone();
                     let core = core_mutex.clone();
-                    event.handle(
+                    let event_result = event.handle(
                         _event_locker.clone(),
                         objects,
                         core,
                         registry_mutex.clone(),
-                    )
+                    );
+                    if let Err(event_result) = event_result {
+                        _sender_mtx.send(event_result).unwrap();
+                    }
                 });
 
             // Process events to populate nodes
@@ -121,10 +128,11 @@ impl PipeWireManager {
     fn _pw_event_handler(
         global: &GlobalObject<&DictRef>,
         objects: &Arc<Mutex<PipeWireObjects>>,
-        _sender: &mpsc::Sender<ConnectorEvent>,
+        _sender: Arc<Mutex<mpsc::Sender<ConnectorEvent>>>,
     ) {
         // Filter by only node ones
         let mut objects_guard = objects.lock().unwrap();
+        let mut _sender_guard = _sender.lock().unwrap();
         match global.type_ {
             pw::types::ObjectType::Node => {
                 let node = Node::new(global);
@@ -149,13 +157,14 @@ impl PipeWireManager {
                 let first_id = link.output_node;
                 let second_id = link.input_node;
                 objects_guard.links.push(link);
-                let _result = _sender.send(
+                let _result = _sender_guard.send(
                     ConnectorEvent::LinkUpdate(first_id, second_id),
                 );
             }
             _ => {
                 log::debug!("(Pipewire)Received non-handled event: {:?} \n{:#?}", global.type_, global.props);
-                let _result = _sender.send(ConnectorEvent::None);
+                let _result =
+                    _sender_guard.send(ConnectorEvent::None);
             }
         }
         objects_guard.update_nodes();
@@ -215,6 +224,11 @@ impl PipeWireManager {
                     first_node_id,
                     second_node_id,
                 )
+                || *event
+                    == ConnectorEvent::LinkFailed(
+                        first_node_id,
+                        second_node_id,
+                    )
         });
     }
 
@@ -235,6 +249,11 @@ impl PipeWireManager {
                     first_node_id,
                     second_node_id,
                 )
+                || *event
+                    == ConnectorEvent::UnLinkFailed(
+                        first_node_id,
+                        second_node_id,
+                    )
         });
     }
 
