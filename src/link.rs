@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Mutex};
+use std::{rc::Rc, sync::RwLock};
 
 use super::utils::val;
 use libspa::utils::dict::DictRef;
@@ -38,23 +38,23 @@ impl Link {
         node
     }
     pub async fn remove_link(
-        &mut self,
-        registry: Rc<Mutex<Registry>>,
+        target_id: u32,
+        registry: Rc<RwLock<Registry>>,
     ) {
-        let registry = registry.lock();
+        let registry = registry.read();
         if let Err(e) = registry {
             log::error!("Failed to lock registry: {}", e);
             return;
         }
         let registry = registry.unwrap();
         let result =
-            registry.destroy_global(self.id).into_async_result();
+            registry.destroy_global(target_id).into_async_result();
         if let Err(e) = result {
             log::error!("Failed to destroy global object: {}", e);
         } else {
             log::info!(
                 "Successfully destroyed global object: {}",
-                self.id
+                target_id
             );
         }
     }

@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Mutex};
+use std::{rc::Rc, sync::RwLock};
 
 use super::utils::{val, val_or, UNKNOWN_STR};
 use libspa::utils::dict::DictRef;
@@ -94,7 +94,6 @@ pub struct Port {
     /// The node this port belongs to
     pub node_id: u32,
     pub audio_channel: AudioChannel,
-    // _core: Arc<Mutex<pipewire::core::Core>>,
     // // Optional fields (only present in some entries)
     // pub port_monitor: Option<String>,
     // pub port_physical: Option<String>,
@@ -135,7 +134,7 @@ impl Port {
     /// Connect the current port into another, assuming that the other port is an input port.
     pub fn link_port(
         &self,
-        core: Rc<Mutex<pipewire::core::Core>>,
+        core: Rc<RwLock<pipewire::core::Core>>,
         target_port: &Self,
     ) -> Result<(), PortError> {
         if self.direction != PortDirection::Out {
@@ -152,7 +151,7 @@ impl Port {
                 format!("{} is not an input port", self.name),
             ));
         }
-        let core = core.lock().expect("Failed to lock core");
+        let core = core.read().expect("Failed to lock core");
 
         if let Err(e) = core.create_object::<pipewire::link::Link>(
             "link-factory",

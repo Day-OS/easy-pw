@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Mutex};
+use std::{rc::Rc, sync::RwLock};
 
 use crate::port::PortDirection;
 
@@ -96,7 +96,7 @@ impl Node {
 
     pub fn link_device(
         &mut self,
-        core: Rc<Mutex<pipewire::core::Core>>,
+        core: Rc<RwLock<pipewire::core::Core>>,
         input_device: &mut Self,
     ) -> Result<(), NodeError> {
         log::debug!(

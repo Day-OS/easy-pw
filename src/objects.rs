@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{mpsc, Arc, RwLock};
 
 use pipewire::registry::Registry;
+
+use crate::event::ConnectorEvent;
 
 use super::link::Link;
 use super::node::Node;
@@ -118,18 +120,17 @@ impl PipeWireObjects {
         self.links.iter().find(|link| link.id == id)
     }
 
-    pub fn find_links_by_id_mut(
+    pub fn find_linked_nodes_by_link_id_mut(
         &mut self,
         id: u32,
-    ) -> Option<&mut Link> {
-        self.links.iter_mut().find(|link| link.id == id)
+    ) -> Option<(u32, u32)> {
+        let link = self.links.iter_mut().find(|link| link.id == id);
+        link.map(|link| (link.output_node, link.input_node))
     }
 
-    pub fn find_node_by_name(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut Node> {
-        self.nodes.iter_mut().find(|node| node.name == name)
+    pub fn find_node_id_by_name(&self, name: &str) -> Option<u32> {
+        let node = self.nodes.iter().find(|node| node.name == name);
+        node.map(|node| node.id)
     }
 
     pub fn remove_node(&mut self, id: u32) {
@@ -150,20 +151,20 @@ impl PipeWireObjects {
     pub fn remove_link(
         &mut self,
         id: u32,
-        registry: Option<Rc<Mutex<Registry>>>,
-    ) -> Result<(), String> {
-        let link = self.find_links_by_id_mut(id);
+        registry: Option<Rc<RwLock<Registry>>>,
+        sender: Arc<RwLock<mpsc::Sender<ConnectorEvent>>>,
+    ) -> Result<(u32, u32), String> {
+        let link = self.find_linked_nodes_by_link_id_mut(id);
         if link.is_none() {
             return Err(format!(
                 "Failed to find link with id {}",
                 id
             ));
         }
+        let link = link.unwrap();
 
         // Log what node is being removed from what node;
-        let link = link.unwrap();
-        let input_node = link.input_node;
-        let output_node = link.output_node;
+        let (input_node, output_node) = link;
 
         let (first_node, second_node) =
             self.find_two_nodes_by_id_mut(input_node, output_node);
@@ -177,17 +178,21 @@ impl PipeWireObjects {
                 first_node.name,
                 second_node.name
             );
-            let link = self.find_links_by_id_mut(id);
-            let link = link.unwrap();
+
             if registry.is_some() {
                 let registry = registry.unwrap();
-                executor::block_on(link.remove_link(registry));
+                executor::block_on(Link::remove_link(id, registry));
             }
         }
 
         let index =
             self.links.iter().position(|link| link.id == id).unwrap();
         self.links.remove(index);
-        Ok(())
+
+        let _result = sender
+            .read()
+            .map_err(|_| "Remove Link Sender is Poisoned")?
+            .send(ConnectorEvent::UnlinkUpdate(link.0, link.1));
+        Ok(link)
     }
 }

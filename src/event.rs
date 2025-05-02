@@ -1,12 +1,12 @@
 use std::{
     fmt::Display,
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::{mpsc, Arc, RwLock},
 };
 
 use pipewire::{core::Core, registry::Registry};
 
-use super::{link::Link, objects::PipeWireObjects};
+use super::objects::PipeWireObjects;
 
 /// Events that is received by the main thread.
 #[derive(Debug, PartialEq, Clone)]
@@ -14,6 +14,7 @@ pub enum ConnectorEvent {
     None,
     LinkUpdate(u32, u32),
     LinkFailed(u32, u32),
+    UnlinkUpdate(u32, u32),
     UnLinkFailed(u32, u32),
 }
 
@@ -49,12 +50,13 @@ impl PipeWireEvent {
     /// Handle the event and return a ConnectorEvent response if needed.
     pub fn handle(
         &self,
-        _event_locker: Arc<Mutex<()>>,
-        objects: Arc<Mutex<PipeWireObjects>>,
-        core: Rc<Mutex<Core>>,
-        registry: Rc<Mutex<Registry>>,
+        _event_locker: Arc<RwLock<()>>,
+        objects: Arc<RwLock<PipeWireObjects>>,
+        core: Rc<RwLock<Core>>,
+        sender: Arc<RwLock<mpsc::Sender<ConnectorEvent>>>,
+        registry: Rc<RwLock<Registry>>,
     ) -> Result<(), ConnectorEvent> {
-        let event_locker = _event_locker.lock().unwrap();
+        let event_locker = _event_locker.write().unwrap();
         log::debug!("(Pipewire) Handling Event: {:#?}", self);
         match self {
             PipeWireEvent::LinkCommand(source_id, target_id) => {
@@ -75,7 +77,11 @@ impl PipeWireEvent {
                     target_id
                 );
                 let result = &PipeWireEvent::_unlink_command(
-                    objects, registry, *source_id, *target_id,
+                    objects,
+                    registry,
+                    *source_id,
+                    *target_id,
+                    sender.clone(),
                 );
                 if let Err(e) = result {
                     log::error!("Failed to link nodes: {}", e);
@@ -93,12 +99,12 @@ impl PipeWireEvent {
     }
 
     fn _link_command(
-        objects: Arc<Mutex<PipeWireObjects>>,
-        core: Rc<Mutex<Core>>,
+        objects: Arc<RwLock<PipeWireObjects>>,
+        core: Rc<RwLock<Core>>,
         source_id: u32,
         target_id: u32,
     ) -> Result<(), String> {
-        let objects = objects.lock();
+        let objects = objects.write();
 
         if let Err(e) = objects {
             return Err(format!("Failed to lock objects: {}", e));
@@ -130,12 +136,13 @@ impl PipeWireEvent {
         Ok(())
     }
     fn _unlink_command(
-        objects: Arc<Mutex<PipeWireObjects>>,
-        registry: Rc<Mutex<Registry>>,
+        objects: Arc<RwLock<PipeWireObjects>>,
+        registry: Rc<RwLock<Registry>>,
         source_id: u32,
         target_id: u32,
+        sender: Arc<RwLock<mpsc::Sender<ConnectorEvent>>>,
     ) -> Result<(), String> {
-        let objects = objects.lock();
+        let objects = objects.write();
         if let Err(e) = objects {
             return Err(format!("Failed to lock objects: {}", e));
         }
@@ -153,7 +160,11 @@ impl PipeWireEvent {
 
         for id in links_id {
             log::debug!("Found link with ID: {} while searching for source ID: {} and target ID: {}", id, source_id, target_id);
-            objects.remove_link(id, Some(registry.clone()))?;
+            objects.remove_link(
+                id,
+                Some(registry.clone()),
+                sender.clone(),
+            )?;
         }
         Ok(())
     }

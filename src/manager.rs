@@ -10,19 +10,21 @@ use pipewire::core::Core;
 use pipewire::registry::{GlobalObject, Registry};
 use std::rc::Rc;
 use std::sync::mpsc::TryRecvError;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 
 use crate::event;
 
 pub struct PipeWireManager {
     #[allow(dead_code)]
-    pub(crate) objects: Arc<Mutex<PipeWireObjects>>,
+    pub(crate) objects: Arc<RwLock<PipeWireObjects>>,
     pub _main_thread: thread::JoinHandle<()>,
     pub _receiver: mpsc::Receiver<event::ConnectorEvent>,
     _sender: channel::Sender<event::PipeWireEvent>,
-    pub _event_locker: Arc<Mutex<()>>,
+    pub _event_locker: Arc<RwLock<()>>,
 }
+
+unsafe impl Sync for PipeWireManager {}
 
 impl Default for PipeWireManager {
     fn default() -> Self {
@@ -31,8 +33,8 @@ impl Default for PipeWireManager {
         let (pw_sender, pw_receiver) =
             channel::channel::<event::PipeWireEvent>();
         // Store nodes in thread-safe container
-        let nodes = Arc::new(Mutex::new(PipeWireObjects::default()));
-        let event_locker = Arc::new(Mutex::new(()));
+        let nodes = Arc::new(RwLock::new(PipeWireObjects::default()));
+        let event_locker = Arc::new(RwLock::new(()));
 
         Self {
             objects: nodes.clone(),
@@ -51,10 +53,10 @@ impl Default for PipeWireManager {
 
 impl PipeWireManager {
     fn _start_thread(
-        _event_locker: Arc<Mutex<()>>,
+        _event_locker: Arc<RwLock<()>>,
         _sender: mpsc::Sender<event::ConnectorEvent>,
         _receiver: channel::Receiver<event::PipeWireEvent>,
-        nodes: Arc<Mutex<PipeWireObjects>>,
+        objects: Arc<RwLock<PipeWireObjects>>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             // Initialize PipeWire
@@ -70,51 +72,57 @@ impl PipeWireManager {
                 core.get_registry().expect("Failed to get registry");
 
             // Clone for use in callback
-            let nodes_clone = nodes.clone();
-            let nodes_clone_remove = nodes.clone();
-            let nodes_clone_event = nodes.clone();
+            let objects_clone = objects.clone();
+            let objects_clone_remove = objects.clone();
+            let objects_clone_event = objects.clone();
 
-            let _sender_arcmtx = Arc::new(Mutex::new(_sender));
+            let _sender_arcmtx: Arc<
+                RwLock<mpsc::Sender<ConnectorEvent>>,
+            > = Arc::new(RwLock::new(_sender));
 
-            let core_mutex: Rc<Mutex<Core>> =
-                Rc::new(Mutex::new(core));
+            let core_lock: Rc<RwLock<Core>> =
+                Rc::new(RwLock::new(core));
 
-            let registry_mutex: Rc<Mutex<Registry>> =
-                Rc::new(Mutex::new(registry));
+            let registry_lock: Rc<RwLock<Registry>> =
+                Rc::new(RwLock::new(registry));
 
-            let registry_lock = registry_mutex.lock().unwrap();
+            let registry_lock_read = registry_lock.read().unwrap();
 
             let event_handler_sender = _sender_arcmtx.clone();
+            let event_remove_handler_sender = _sender_arcmtx.clone();
             // Add registry listener
-            let _listener = registry_lock
+            let _listener = registry_lock_read
                 .add_listener_local()
                 .global(move |global| {
                     Self::_pw_event_handler(
                         global,
-                        &nodes_clone.clone(),
+                        &objects_clone.clone(),
                         event_handler_sender.clone(),
                     )
                 })
                 .global_remove(move |object_id| {
                     Self::_pw_remove_event_handler(
                         object_id,
-                        &nodes_clone_remove,
+                        &objects_clone_remove,
+                        event_remove_handler_sender.clone(),
                     )
                 })
                 .register();
 
-            drop(registry_lock);
+            drop(registry_lock_read);
 
+            let manager_events_sender = _sender_arcmtx.clone();
             let _receiver =
                 _receiver.attach(mainloop.loop_(), move |event| {
-                    let _sender_mtx = _sender_arcmtx.lock().unwrap();
-                    let objects = nodes_clone_event.clone();
-                    let core = core_mutex.clone();
+                    let _sender_mtx = _sender_arcmtx.read().unwrap();
+                    let objects = objects_clone_event.clone();
+                    let core = core_lock.clone();
                     let event_result = event.handle(
                         _event_locker.clone(),
                         objects,
                         core,
-                        registry_mutex.clone(),
+                        manager_events_sender.clone(),
+                        registry_lock.clone(),
                     );
                     if let Err(event_result) = event_result {
                         _sender_mtx.send(event_result).unwrap();
@@ -127,12 +135,12 @@ impl PipeWireManager {
     }
     fn _pw_event_handler(
         global: &GlobalObject<&DictRef>,
-        objects: &Arc<Mutex<PipeWireObjects>>,
-        _sender: Arc<Mutex<mpsc::Sender<ConnectorEvent>>>,
+        objects: &Arc<RwLock<PipeWireObjects>>,
+        _sender: Arc<RwLock<mpsc::Sender<ConnectorEvent>>>,
     ) {
         // Filter by only node ones
-        let mut objects_guard = objects.lock().unwrap();
-        let mut _sender_guard = _sender.lock().unwrap();
+        let mut objects_guard = objects.write().unwrap();
+        let mut _sender_guard = _sender.read().unwrap();
         match global.type_ {
             pw::types::ObjectType::Node => {
                 let node = Node::new(global);
@@ -172,10 +180,11 @@ impl PipeWireManager {
 
     fn _pw_remove_event_handler(
         object_id: u32,
-        objects: &Arc<Mutex<PipeWireObjects>>,
+        objects: &Arc<RwLock<PipeWireObjects>>,
+        _sender: Arc<RwLock<mpsc::Sender<ConnectorEvent>>>,
     ) {
-        let mut objs = objects.lock().unwrap();
-        PipeWireManager::remove_object(&mut objs, object_id);
+        let mut objs = objects.write().unwrap();
+        PipeWireManager::remove_object(&mut objs, object_id, _sender);
     }
 
     fn _raise_event(&self, event: PipeWireEvent) {
@@ -184,25 +193,24 @@ impl PipeWireManager {
             log::error!("Failed to send event: {:?}", e);
         }
         log::debug!("Event raised: {:?}", event_info);
-        let _thread_locker = self._event_locker.lock().unwrap();
+        let _thread_locker = self._event_locker.read().unwrap();
     }
 
-    fn remove_object(objects: &mut PipeWireObjects, obj_id: u32) {
-        let mut link_id: Option<u32> = None;
-        let mut node_id: Option<u32> = None;
-
-        if let Some(link) = objects.find_links_by_id_mut(obj_id) {
-            link_id = Some(link.id);
+    fn remove_object(
+        objects: &mut PipeWireObjects,
+        obj_id: u32,
+        _sender: Arc<RwLock<mpsc::Sender<ConnectorEvent>>>,
+    ) {
+        if objects.find_linked_nodes_by_link_id_mut(obj_id).is_some()
+        {
+            let link = objects.remove_link(obj_id, None, _sender);
+            if let Err(err) = link {
+                log::error!("Failed to remove link: {}", err);
+                return;
+            }
         }
         if let Some(node) = objects.find_node_by_id(obj_id) {
-            node_id = Some(node.id);
-        }
-
-        if let Some(id) = link_id {
-            let _ = objects.remove_link(id, None);
-        }
-        if let Some(id) = node_id {
-            objects.remove_node(id);
+            objects.remove_node(node.id);
         }
     }
 
@@ -245,7 +253,7 @@ impl PipeWireManager {
         ));
         self.wait_for_event(|event: &ConnectorEvent| {
             *event
-                == ConnectorEvent::LinkUpdate(
+                == ConnectorEvent::UnlinkUpdate(
                     first_node_id,
                     second_node_id,
                 )
@@ -277,7 +285,7 @@ impl PipeWireManager {
         log::debug!("(Connector) Received event: {:?}", event_result)
     }
 
-    pub fn get_objects(&self) -> Arc<Mutex<PipeWireObjects>> {
+    pub fn get_objects(&self) -> Arc<RwLock<PipeWireObjects>> {
         self.objects.clone()
     }
 }
