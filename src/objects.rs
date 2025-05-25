@@ -45,14 +45,12 @@ impl PipeWireObjects {
                     continue;
                 }
                 log::debug!(
-                    "Adding port {} to node {}",
-                    port_id,
-                    node_id
+                    "Adding port {port_id} to node {node_id}"
                 );
                 node.0.add_port(port);
                 node.1 = true;
             } else {
-                log::error!("Port {} has no node", port_id);
+                log::error!("Port {port_id} has no node");
                 ports_not_found.push(port);
             }
         }
@@ -156,10 +154,7 @@ impl PipeWireObjects {
     ) -> Result<(u32, u32), String> {
         let link = self.find_linked_nodes_by_link_id_mut(id);
         if link.is_none() {
-            return Err(format!(
-                "Failed to find link with id {}",
-                id
-            ));
+            return Err(format!("Failed to find link with id {id}"));
         }
         let link = link.unwrap();
 

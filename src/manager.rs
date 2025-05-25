@@ -190,9 +190,9 @@ impl PipeWireManager {
     fn _raise_event(&self, event: PipeWireEvent) {
         let event_info = event.to_string();
         if let Err(e) = self._sender.send(event) {
-            log::error!("Failed to send event: {:?}", e);
+            log::error!("Failed to send event: {e:?}");
         }
-        log::debug!("Event raised: {:?}", event_info);
+        log::debug!("Event raised: {event_info:?}");
         let _thread_locker = self._event_locker.read().unwrap();
     }
 
@@ -205,7 +205,7 @@ impl PipeWireManager {
         {
             let link = objects.remove_link(obj_id, None, _sender);
             if let Err(err) = link {
-                log::error!("Failed to remove link: {}", err);
+                log::error!("Failed to remove link: {err}");
                 return;
             }
         }
@@ -276,13 +276,13 @@ impl PipeWireManager {
 
             if let Err(e) = result {
                 if e == TryRecvError::Disconnected {
-                    log::error!("Failed to receive event: {}", e);
+                    log::error!("Failed to receive event: {e}");
                 }
                 continue;
             }
             event_result = result.unwrap();
         }
-        log::debug!("(Connector) Received event: {:?}", event_result)
+        log::debug!("(Connector) Received event: {event_result:?}")
     }
 
     pub fn get_objects(&self) -> Arc<RwLock<PipeWireObjects>> {

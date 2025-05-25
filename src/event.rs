@@ -32,14 +32,10 @@ impl Display for PipeWireEvent {
     ) -> std::fmt::Result {
         match self {
             PipeWireEvent::LinkCommand(source_id, target_id) => {
-                write!(f, "LinkCommand({}, {})", source_id, target_id)
+                write!(f, "LinkCommand({source_id}, {target_id})")
             }
             PipeWireEvent::UnlinkCommand(source_id, target_id) => {
-                write!(
-                    f,
-                    "UnlinkCommand({}, {})",
-                    source_id, target_id
-                )
+                write!(f, "UnlinkCommand({source_id}, {target_id})")
             }
         }
     }
@@ -57,14 +53,14 @@ impl PipeWireEvent {
         registry: Rc<RwLock<Registry>>,
     ) -> Result<(), ConnectorEvent> {
         let event_locker = _event_locker.write().unwrap();
-        log::debug!("(Pipewire) Handling Event: {:#?}", self);
+        log::debug!("(Pipewire) Handling Event: {self:#?}");
         match self {
             PipeWireEvent::LinkCommand(source_id, target_id) => {
                 let result = &PipeWireEvent::_link_command(
                     objects, core, *source_id, *target_id,
                 );
                 if let Err(e) = result {
-                    log::error!("Failed to link nodes: {}", e);
+                    log::error!("Failed to link nodes: {e}");
                     return Err(ConnectorEvent::LinkFailed(
                         *source_id, *target_id,
                     ));
@@ -72,9 +68,7 @@ impl PipeWireEvent {
             }
             PipeWireEvent::UnlinkCommand(source_id, target_id) => {
                 log::info!(
-                    "Unlinking nodes {} and {}",
-                    source_id,
-                    target_id
+                    "Unlinking nodes {source_id} and {target_id}"
                 );
                 let result = &PipeWireEvent::_unlink_command(
                     objects,
@@ -84,14 +78,14 @@ impl PipeWireEvent {
                     sender.clone(),
                 );
                 if let Err(e) = result {
-                    log::error!("Failed to link nodes: {}", e);
+                    log::error!("Failed to link nodes: {e}");
                     return Err(ConnectorEvent::UnLinkFailed(
                         *source_id, *target_id,
                     ));
                 }
             }
             _ => {
-                log::warn!("Unhandled event: {:?}", self);
+                log::warn!("Unhandled event: {self:?}");
             }
         }
         drop(event_locker);
@@ -107,14 +101,13 @@ impl PipeWireEvent {
         let objects = objects.write();
 
         if let Err(e) = objects {
-            return Err(format!("Failed to lock objects: {}", e));
+            return Err(format!("Failed to lock objects: {e}"));
         }
         let mut objects = objects.unwrap();
 
         if source_id == target_id {
             return Err(format!(
-                "Source and target IDs are the same: {}",
-                source_id
+                "Source and target IDs are the same: {source_id}"
             ));
         }
 
@@ -123,15 +116,14 @@ impl PipeWireEvent {
 
         if input_node.is_none() || target_node.is_none() {
             return Err(format!(
-                "One or both nodes not found for IDs: {} and {}",
-                source_id, target_id
+                "One or both nodes not found for IDs: {source_id} and {target_id}"
             ));
         }
 
         let input_node = input_node.unwrap();
         let target_node = target_node.unwrap();
         if let Err(e) = input_node.link_device(core, target_node) {
-            return Err(format!("Failed to link devices: {}", e));
+            return Err(format!("Failed to link devices: {e}"));
         }
         Ok(())
     }
@@ -144,7 +136,7 @@ impl PipeWireEvent {
     ) -> Result<(), String> {
         let objects = objects.write();
         if let Err(e) = objects {
-            return Err(format!("Failed to lock objects: {}", e));
+            return Err(format!("Failed to lock objects: {e}"));
         }
         let mut objects = objects.unwrap();
 
@@ -159,7 +151,7 @@ impl PipeWireEvent {
         }
 
         for id in links_id {
-            log::debug!("Found link with ID: {} while searching for source ID: {} and target ID: {}", id, source_id, target_id);
+            log::debug!("Found link with ID: {id} while searching for source ID: {source_id} and target ID: {target_id}");
             objects.remove_link(
                 id,
                 Some(registry.clone()),

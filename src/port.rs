@@ -163,7 +163,7 @@ impl Port {
                 "object.linger" => "1"
             },
         ) {
-            log::warn!("Failed to create link: {}", e);
+            log::warn!("Failed to create link: {e}");
         }
 
         log::debug!(
