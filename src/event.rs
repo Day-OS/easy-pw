@@ -4,6 +4,7 @@ use std::{
     sync::{mpsc, Arc, RwLock},
 };
 
+use futures::executor::block_on;
 use pipewire::{core::Core, registry::Registry};
 
 use super::objects::PipeWireObjects;
@@ -150,13 +151,27 @@ impl PipeWireEvent {
             }
         }
 
+        // HOTFIX FOR WHEN SOMETHING IS NOT EVEN LINKED
+        // TODO: MAKE AN ACTUAL GOOD FIX FOR THAT
+        // https://github.com/Day-OS/easy-pw/issues/1
+        if links_id.is_empty() {
+            log::debug!("hm!");
+            let _result = sender
+                .read()
+                .map_err(|_| "Remove Link Sender is Poisoned")?
+                .send(ConnectorEvent::UnlinkUpdate(
+                    source_id, target_id,
+                ));
+            return Ok(());
+        }
+
         for id in links_id {
             log::debug!("Found link with ID: {id} while searching for source ID: {source_id} and target ID: {target_id}");
-            objects.remove_link(
+            block_on(objects.remove_link(
                 id,
                 Some(registry.clone()),
                 sender.clone(),
-            )?;
+            ))?;
         }
         Ok(())
     }

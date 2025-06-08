@@ -9,7 +9,6 @@ use crate::event::ConnectorEvent;
 use super::link::Link;
 use super::node::Node;
 use super::port::Port;
-use futures::executor;
 #[derive(Default)]
 pub struct PipeWireObjects {
     pub nodes: Vec<Node>,
@@ -146,7 +145,7 @@ impl PipeWireObjects {
     }
     /// Removes a link from the list of links and optionally from the registry.
     /// If registry is None, then it will not remove the link from the registry.
-    pub fn remove_link(
+    pub async fn remove_link(
         &mut self,
         id: u32,
         registry: Option<Rc<RwLock<Registry>>>,
@@ -176,14 +175,13 @@ impl PipeWireObjects {
 
             if registry.is_some() {
                 let registry = registry.unwrap();
-                executor::block_on(Link::remove_link(id, registry));
+                Link::remove_link(id, registry).await;
             }
         }
 
         let index =
             self.links.iter().position(|link| link.id == id).unwrap();
         self.links.remove(index);
-
         let _result = sender
             .read()
             .map_err(|_| "Remove Link Sender is Poisoned")?

@@ -3,6 +3,7 @@ use crate::node::Node;
 use crate::objects::PipeWireObjects;
 use crate::port::Port;
 use event::{ConnectorEvent, PipeWireEvent};
+use futures::executor::block_on;
 use libspa::utils::dict::DictRef;
 use pipewire as pw;
 use pipewire::channel;
@@ -203,7 +204,8 @@ impl PipeWireManager {
     ) {
         if objects.find_linked_nodes_by_link_id_mut(obj_id).is_some()
         {
-            let link = objects.remove_link(obj_id, None, _sender);
+            let link =
+                block_on(objects.remove_link(obj_id, None, _sender));
             if let Err(err) = link {
                 log::error!("Failed to remove link: {err}");
                 return;
@@ -241,7 +243,6 @@ impl PipeWireManager {
     }
 
     /// Get the first link between two nodes and remove it
-    #[allow(dead_code)]
     pub fn unlink_nodes(
         &self,
         first_node_id: u32,
@@ -251,6 +252,8 @@ impl PipeWireManager {
             first_node_id,
             second_node_id,
         ));
+        log::debug!("waiting!");
+
         self.wait_for_event(|event: &ConnectorEvent| {
             *event
                 == ConnectorEvent::UnlinkUpdate(
