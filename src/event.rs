@@ -112,6 +112,16 @@ impl PipeWireEvent {
             ));
         }
 
+        for link in objects.links.iter() {
+            if link.output_node == source_id
+                && link.input_node == target_id
+            {
+                return Err(format!(
+                    "Link already exist {source_id} <===> {target_id}"
+                ));
+            }
+        }
+
         let (input_node, target_node) =
             objects.find_two_nodes_by_id_mut(source_id, target_id);
 
@@ -151,18 +161,10 @@ impl PipeWireEvent {
             }
         }
 
-        // HOTFIX FOR WHEN SOMETHING IS NOT EVEN LINKED
-        // TODO: MAKE AN ACTUAL GOOD FIX FOR THAT
-        // https://github.com/Day-OS/easy-pw/issues/1
         if links_id.is_empty() {
-            log::debug!("hm!");
-            let _result = sender
-                .read()
-                .map_err(|_| "Remove Link Sender is Poisoned")?
-                .send(ConnectorEvent::UnlinkUpdate(
-                    source_id, target_id,
-                ));
-            return Ok(());
+            return Err(
+                "Tried to unlink a non existant linkage".to_owned()
+            );
         }
 
         for id in links_id {
